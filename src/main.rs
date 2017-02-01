@@ -27,14 +27,17 @@ impl Spaceship {
 
 fn index(_: &mut Request, spaceship: &Spaceship) -> IronResult<Response> {
 	let mut ctx = Context::new();
-	ctx.add("title", &"<b>spacship!</b>");
+	ctx.add("title", &"<b>spaceship!</b>");
 	ctx.add("body", &"it's working");
 
 	let obj = match spaceship.tera().lock() {
         Ok(x) => x,
         Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
     };
-	let content = obj.render("templates/index.html", ctx).unwrap();
+	let content = match obj.render("index.html", ctx) {
+		Ok(x) => x,
+		Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
+	};
 	return Ok(Response::with((iron::status::Ok, content)));
 }
 
