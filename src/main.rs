@@ -7,11 +7,16 @@ use tera::Context;
 
 extern crate iron;
 extern crate router;
+extern crate hyper;
 
 use iron::prelude::*;
 use router::Router;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+use hyper::header::{Headers, ContentType};
+use hyper::mime::{Mime, TopLevel, SubLevel};
+
 
 #[derive(Default,Clone)]
 struct Spaceship {
@@ -38,7 +43,9 @@ fn index(_: &mut Request, spaceship: &Spaceship) -> IronResult<Response> {
 		Ok(x) => x,
 		Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
 	};
-	return Ok(Response::with((iron::status::Ok, content)));
+	let mut resp = Response::with((iron::status::Ok, content));
+	resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+	Ok(resp)
 }
 
 fn main() {

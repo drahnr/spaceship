@@ -13,5 +13,6 @@ Spaceship, the port of bottleship to rust
 [dependencies]
 iron = "*"
 router = "*"
-tera = "0.6.1"
-syntect = "1.0"
+tera = "*"
+hyper = "*"
+#syntect = { git = "https://github.com/trishume/syntect" }
