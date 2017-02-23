@@ -1,6 +1,9 @@
 #[macro_use] extern crate tera;
 
 
+use std::env;
+
+
 use tera::Tera;
 use tera::Context;
 
@@ -49,10 +52,20 @@ fn index(_: &mut Request, spaceship: &Spaceship) -> IronResult<Response> {
 }
 
 fn main() {
+
+	let address = match env::var("SPACESHIP_ADDRESS") {
+		Ok(x) => x,
+		Err(_) => String::from("127.0.0.1"),
+	};
+	let port = match env::var("SPACESHIP_PORT") {
+		Ok(x) => x,
+		Err(_) => String::from("8080"),
+	};
+
     let spaceship = Spaceship{tera: Arc::new(Mutex::new(compile_templates!("templates/**/*"))), ..Default::default()};
     let mut router = Router::new();
 
     router.get("/", move |request: &mut Request| index(request, &spaceship), "magicid");
 
-    Iron::new(router).http("localhost:8080").unwrap();
+    Iron::new(router).http(format!("{}:{}",address,port)).unwrap();
 }
