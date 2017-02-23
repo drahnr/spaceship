@@ -16,11 +16,11 @@ RUN dnf install -y make
 ENV CMAKE_MAKE_PROGRAM=make
 
 ADD . /spaceship/
-RUN cargo build --verbose
+RUN cargo build --release --verbose
 RUN cargo install
 RUN rm -rf src
 
 EXPOSE 8080
 
-CMD ["build/Debug/spaceship"]
+CMD ["target/release/spaceship"]
 
