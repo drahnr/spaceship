@@ -19,5 +19,8 @@ ADD . /spaceship/
 RUN cargo build --verbose
 RUN cargo install
 RUN rm -rf src
+
+EXPOSE 8080
+
 CMD ["build/Debug/spaceship"]
 
