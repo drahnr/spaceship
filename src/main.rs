@@ -55,7 +55,7 @@ fn main() {
 
 	let address = match env::var("SPACESHIP_ADDRESS") {
 		Ok(x) => x,
-		Err(_) => String::from("127.0.0.1"),
+		Err(_) => String::from("0.0.0.0"),
 	};
 	let port = match env::var("SPACESHIP_PORT") {
 		Ok(x) => x,
