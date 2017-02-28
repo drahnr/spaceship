@@ -15,4 +15,6 @@ iron = "*"
 router = "*"
 tera = "*"
 hyper = "*"
+regex = "0.2"
+lazy_static = "*"
 #syntect = { git = "https://github.com/trishume/syntect" }
