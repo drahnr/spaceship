@@ -29,15 +29,29 @@ use hyper::header::ContentType;
 use hyper::mime::{Mime, TopLevel, SubLevel};
 
 
+use std::error::Error;
+use std::fmt::{self, Debug};
+
+
+#[derive(Debug)]
+struct StringError(String);
+
+impl fmt::Display for StringError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl Error for StringError {
+    fn description(&self) -> &str { &*self.0 }
+}
+
+
 struct Custom404;
 
 impl AfterMiddleware for Custom404 {
     fn catch(&self, _: &mut Request, err: IronError) -> IronResult<Response> {
-        if let Some(_) = err.error.downcast::<NoRoute>() {
-            Ok(Response::with((iron::status::NotFound, "Custom 404 response")))
-        } else {
-            Err(err)
-        }
+        Ok(Response::with((iron::status::NotFound, "Custom 404 response")))
     }
 }
 
@@ -58,26 +72,38 @@ impl Spaceship {
 	fn cache<'a>(&'a self) -> &'a Arc<RwLock<HashMap<String, String>>> {
 		&self.cache
 	}
+
+	fn render(&self, req: &mut Request) -> Option<String> {
+		let mut chunks = req.url.path();
+		chunks.retain(|&x| x != "");
+		let path = chunks.join("/");
+
+		let mut ctx = Context::new();
+		ctx.add("title", &"spaceship!");
+		ctx.add("body", &format!("\"{}\" is still work in progress", path));
+
+		match self.tera().read() {
+			Ok(x) => {
+				x.render("index.html", ctx).and_then(|content| {Ok(content)}).ok()
+				},
+			Err(_) => None,
+		}
+	}
 }
 
 impl Handler for Spaceship {
 
 	fn handle(&self, req: &mut Request) -> IronResult<Response> {
-		let mut ctx = Context::new();
-		ctx.add("title", &"spaceship!");
-		ctx.add("body", &"it's working");
 
-		let obj = match self.tera().read() {
-		    Ok(x) => x,
-		    Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
-		};
-		let content = match obj.render("index.html", ctx) {
-			Ok(x) => x,
-			Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
-		};
-		let mut resp = Response::with((iron::status::Ok, content));
-		resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
-		Ok(resp)
+		match self.render(req) {
+			Some(content) => {
+								let mut resp = Response::with((iron::status::Ok, content));
+								resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+								return Ok(resp);
+								},
+			None => {},
+		}
+		Err(IronError::new(StringError("Error".to_string()), iron::status::InternalServerError))
 	}
 }
 
@@ -123,7 +149,7 @@ impl Handler for CssHandler {
 			},
 			None => {}
 		}
-		Ok(Response::with((iron::status::InternalServerError)))
+		Err(IronError::new(StringError("Error".to_string()), iron::status::BadRequest))
 	}
 }
 
@@ -138,11 +164,18 @@ fn main() {
 	let address = env::var("SPACESHIP_ADDRESS").unwrap_or(String::from("0.0.0.0"));
 	let port = env::var("SPACESHIP_PORT").unwrap_or(String::from("8080"));
 
-    let spaceship = Spaceship::new();
     let mut router = Router::new();
 
 	let css_handler = CssHandler::new();
     router.get("/static/*", css_handler, "css");
 
-    Iron::new(router).http(format!("{}:{}",address,port)).unwrap();
+    let spaceship_handler = Spaceship::new();
+    // router.get("/*", spaceship_handler.clone(), "spaceship");
+    router.get("/", spaceship_handler.clone(), "index");
+
+    let mut chain = Chain::new(router);
+    // chain.link_before(MyMiddleware);
+    chain.link_after(Custom404);
+
+    Iron::new(chain).http(format!("{}:{}",address,port)).unwrap();
 }
