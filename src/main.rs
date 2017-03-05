@@ -12,133 +12,137 @@ use std::env;
 use std::io::prelude::*;
 use std::fs::File;
 
-
 use tera::Tera;
 use tera::Context;
-
-
-
 
 use regex::Regex;
 
 use iron::prelude::*;
-use router::Router;
+
+use iron::{BeforeMiddleware, AroundMiddleware, AfterMiddleware, Handler};
+
+use router::{Router, NoRoute};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use hyper::header::ContentType;
 use hyper::mime::{Mime, TopLevel, SubLevel};
 
 
+struct Custom404;
+
+impl AfterMiddleware for Custom404 {
+    fn catch(&self, _: &mut Request, err: IronError) -> IronResult<Response> {
+        if let Some(_) = err.error.downcast::<NoRoute>() {
+            Ok(Response::with((iron::status::NotFound, "Custom 404 response")))
+        } else {
+            Err(err)
+        }
+    }
+}
+
+
 #[derive(Default,Clone)]
 struct Spaceship {
-    cache: Arc<Mutex<HashMap<String, String>>>,
-    tera: Arc<Mutex<Tera>>,
+    cache: Arc<RwLock<HashMap<String, String>>>,
+    tera: Arc<RwLock<Tera>>,
 }
 
 impl Spaceship {
-	fn tera<'a>(&'a self) -> &'a Arc<Mutex<Tera>> {
+	fn new() -> Spaceship {
+		Spaceship{tera: Arc::new(RwLock::new(compile_templates!("templates/**/*"))), ..Default::default()}
+	}
+	fn tera<'a>(&'a self) -> &'a Arc<RwLock<Tera>> {
 		&self.tera
 	}
-	fn cache<'a>(&'a self) -> &'a Arc<Mutex<HashMap<String, String>>> {
+	fn cache<'a>(&'a self) -> &'a Arc<RwLock<HashMap<String, String>>> {
 		&self.cache
 	}
 }
 
-fn css(req: &Request, spaceship: &Spaceship) -> IronResult<Response> {
-	let mut cache = match spaceship.cache().lock() {
-		Ok(x) => x,
-        Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
-    };
+impl Handler for Spaceship {
 
-	let url = &req.url;
-	println!("Css Request {:?}", url);
-	println!("Css Request {:?}", url.path());
+	fn handle(&self, req: &mut Request) -> IronResult<Response> {
+		let mut ctx = Context::new();
+		ctx.add("title", &"spaceship!");
+		ctx.add("body", &"it's working");
 
-	let key = String::from("style.css");
-	let css_str = match cache.get(&key) {
-        Some(x) => x.clone(),
-        None => {
-			let mut f = File::open("static/style.css").unwrap();
-			let mut s = String::new();
-			match f.read_to_string(&mut s) {
-				Err(_) => {
-					println!("Could not find static/style.css");
-					return Ok(Response::with((iron::status::NotFound)));
-				},
-				Ok(_) => {}
-			};
-			s
-        }
-    };
-
-	cache.insert(key, css_str.clone());
-
-	let mut resp = Response::with((iron::status::Ok, css_str));
-	resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Css, vec![])));
-	Ok(resp)
+		let obj = match self.tera().read() {
+		    Ok(x) => x,
+		    Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
+		};
+		let content = match obj.render("index.html", ctx) {
+			Ok(x) => x,
+			Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
+		};
+		let mut resp = Response::with((iron::status::Ok, content));
+		resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+		Ok(resp)
+	}
 }
 
-fn index(req: &mut Request, spaceship: &Spaceship) -> IronResult<Response> {
-	lazy_static! {
-		static ref CSS_REGEX: Regex = Regex::new(r".*css").unwrap();
+
+
+#[derive(Default,Clone)]
+struct CssHandler {
+    cache: Arc<RwLock<HashMap<String, String>>>
+}
+
+
+impl CssHandler {
+	fn new() -> CssHandler {
+		CssHandler { ..Default::default()}
 	}
 
-	let filename;
-	let url = &req.url;
-	println!("Request {:?}", url);
-	println!("Request {:?}", url.path());
-	filename = match url.path().last() {
-		Some(x) => x.clone(),
-		None => {
-			println!("No filename given");
-			return Ok(Response::with((iron::status::NotFound)))
+	fn read_css_to_string(&self, path: &String) -> Option<String> {
+		lazy_static! {
+			static ref CSS_REGEX: Regex = Regex::new(r".*\.css").unwrap();
 		}
-	};
-	println!("{}", filename);
-	if CSS_REGEX.is_match(filename) {
-		println!("Regex match! going for CSS");
-		let x = css(&req, &spaceship);
-		return x;
+		if CSS_REGEX.is_match(path) {
+			return File::open(path).and_then(|mut f| {
+						let mut s = String::new();
+						f.read_to_string(&mut s).and_then(|_| {Ok(s)})
+					}).ok();
+		}
+		None
 	}
+}
 
 
-	let mut ctx = Context::new();
-	ctx.add("title", &"spaceship!");
-	ctx.add("body", &"it's working");
+impl Handler for CssHandler {
+	fn handle(&self, req: &mut Request) -> IronResult<Response> {
+		let mut chunks = req.url.path();
+		chunks.retain(|&x| x != "");
+		let path = chunks.join("/");
+		println!("lookup {:?} {}", chunks, path);
+		match self.read_css_to_string(&String::from(path)) {
+			Some(content) => {
+				let mut resp = Response::with((iron::status::Ok, content));
+				resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Css, vec![])));
+				return Ok(resp);
+			},
+			None => {}
+		}
+		Ok(Response::with((iron::status::InternalServerError)))
+	}
+}
 
-	let obj = match spaceship.tera().lock() {
-        Ok(x) => x,
-        Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
-    };
-	let content = match obj.render("index.html", ctx) {
-		Ok(x) => x,
-		Err(_) => return Ok(Response::with((iron::status::InternalServerError)))
-	};
-	let mut resp = Response::with((iron::status::Ok, content));
-	resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
-	Ok(resp)
+impl AroundMiddleware for CssHandler {
+    fn around(self, handler: Box<Handler>) -> Box<Handler> {
+		Box::new(CssHandler::new()) as Box<Handler>
+    }
 }
 
 
 fn main() {
-
 	let address = env::var("SPACESHIP_ADDRESS").unwrap_or(String::from("0.0.0.0"));
 	let port = env::var("SPACESHIP_PORT").unwrap_or(String::from("8080"));
 
-    let spaceship = Spaceship{tera: Arc::new(Mutex::new(compile_templates!("templates/**/*"))), ..Default::default()};
+    let spaceship = Spaceship::new();
     let mut router = Router::new();
-    {
-    let spaceship = spaceship.clone();
-    router.get("/*", move |request: &mut Request| index(request, &spaceship), "magicid");
-    }
-    {
-    let spaceship = spaceship.clone();
-    router.get("/", move |request: &mut Request| index(request, &spaceship), "index");
-    }
-    {
-    let spaceship = spaceship.clone();
-    router.get("/static/*", move |request: &mut Request| css(request, &spaceship), "static");
-    }
+
+	let css_handler = CssHandler::new();
+    router.get("/static/*", css_handler, "css");
+
     Iron::new(router).http(format!("{}:{}",address,port)).unwrap();
 }
