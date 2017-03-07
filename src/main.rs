@@ -65,7 +65,7 @@ impl Spaceship {
 		&self.cache
 	}
 
-	fn render(&self, template: &String, ctx: Context) -> Option<String> {
+	fn render(&self, template: &String, ctx: &mut Context) -> Option<String> {
 		match self.tera().read() {
 			Ok(x) => {
 				x.render(template, ctx).and_then(|content| {Ok(content)}).ok()
@@ -86,7 +86,7 @@ impl Handler for Spaceship {
 		ctx.add("body", &format!("\"{}\" is still work in progress", path));
 
 		let template = String::from("index.html");
-		match self.render(&template, ctx) {
+		match self.render(&template, &mut ctx) {
 			Some(content) => {
 				let mut resp = Response::with((iron::status::Ok, content));
 				resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
@@ -110,7 +110,7 @@ impl AfterMiddleware for Spaceship {
 		ctx.add("body", &"404");
 
 		let template = String::from("404.html");
-		match self.render(&template, ctx) {
+		match self.render(&template, &mut ctx) {
 			Some(content) => {
 				let mut resp = Response::with((iron::status::Ok, content));
 				resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
