@@ -47,14 +47,6 @@ impl Error for StringError {
 }
 
 
-struct Custom404;
-
-impl AfterMiddleware for Custom404 {
-    fn catch(&self, _: &mut Request, err: IronError) -> IronResult<Response> {
-        Ok(Response::with((iron::status::NotFound, "Custom 404 response")))
-    }
-}
-
 
 #[derive(Default,Clone)]
 struct Spaceship {
@@ -73,7 +65,18 @@ impl Spaceship {
 		&self.cache
 	}
 
-	fn render(&self, req: &mut Request) -> Option<String> {
+	fn render(&self, template: &String, ctx: Context) -> Option<String> {
+		match self.tera().read() {
+			Ok(x) => {
+				x.render(template, ctx).and_then(|content| {Ok(content)}).ok()
+				},
+			Err(_) => None,
+		}
+	}
+}
+
+impl Handler for Spaceship {
+	fn handle(&self, req: &mut Request) -> IronResult<Response> {
 		let mut chunks = req.url.path();
 		chunks.retain(|&x| x != "");
 		let path = chunks.join("/");
@@ -82,25 +85,13 @@ impl Spaceship {
 		ctx.add("title", &"spaceship!");
 		ctx.add("body", &format!("\"{}\" is still work in progress", path));
 
-		match self.tera().read() {
-			Ok(x) => {
-				x.render("index.html", ctx).and_then(|content| {Ok(content)}).ok()
-				},
-			Err(_) => None,
-		}
-	}
-}
-
-impl Handler for Spaceship {
-
-	fn handle(&self, req: &mut Request) -> IronResult<Response> {
-
-		match self.render(req) {
+		let template = String::from("index.html");
+		match self.render(&template, ctx) {
 			Some(content) => {
-								let mut resp = Response::with((iron::status::Ok, content));
-								resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
-								return Ok(resp);
-								},
+				let mut resp = Response::with((iron::status::Ok, content));
+				resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+				return Ok(resp);
+			},
 			None => {},
 		}
 		Err(IronError::new(StringError("Error".to_string()), iron::status::InternalServerError))
@@ -108,6 +99,30 @@ impl Handler for Spaceship {
 }
 
 
+impl AfterMiddleware for Spaceship {
+    fn catch(&self, req: &mut Request, err: IronError) -> IronResult<Response> {
+		let mut chunks = req.url.path();
+		chunks.retain(|&x| x != "");
+		let path = chunks.join("/");
+
+		let mut ctx = Context::new();
+		ctx.add("title", &"spaceship!");
+		ctx.add("body", &"404");
+
+		let template = String::from("404.html");
+		match self.render(&template, ctx) {
+			Some(content) => {
+				let mut resp = Response::with((iron::status::Ok, content));
+				resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+				return Ok(resp);
+			},
+			None => {
+				return Ok(Response::with((iron::status::InternalServerError)));
+			}
+		}
+
+    }
+}
 
 #[derive(Default,Clone)]
 struct CssHandler {
@@ -147,10 +162,9 @@ impl Handler for CssHandler {
 				resp.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Css, vec![])));
 				return Ok(resp);
 			},
-			None => {}
-		}
+			None => {}		}
 		Err(IronError::new(StringError("Error".to_string()), iron::status::BadRequest))
-	}
+}
 }
 
 impl AroundMiddleware for CssHandler {
@@ -170,12 +184,12 @@ fn main() {
     router.get("/static/*", css_handler, "css");
 
     let spaceship_handler = Spaceship::new();
-    // router.get("/*", spaceship_handler.clone(), "spaceship");
+    // router.get("/[^static]*", spaceship_handler.clone(), "spaceship");
     router.get("/", spaceship_handler.clone(), "index");
 
     let mut chain = Chain::new(router);
     // chain.link_before(MyMiddleware);
-    chain.link_after(Custom404);
+    chain.link_after(spaceship_handler.clone());
 
     Iron::new(chain).http(format!("{}:{}",address,port)).unwrap();
 }
