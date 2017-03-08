@@ -109,7 +109,7 @@ impl AfterMiddleware for Spaceship {
 		ctx.add("title", &"spaceship!");
 		ctx.add("body", &"404");
 
-		let template = String::from("404.html");
+		let template = String::from("error.html");
 		match self.render(&template, &mut ctx) {
 			Some(content) => {
 				let mut resp = Response::with((iron::status::Ok, content));
