@@ -16,5 +16,7 @@ router = "*"
 tera = "*"
 hyper = "*"
 regex = "0.2"
+time = "*"
+postgres = "0.14"
 lazy_static = "*"
 #syntect = { git = "https://github.com/trishume/syntect" }

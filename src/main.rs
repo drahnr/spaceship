@@ -8,6 +8,7 @@ extern crate hyper;
 extern crate regex;
 
 
+
 use std::env;
 use std::io::prelude::*;
 use std::fs::File;
@@ -32,6 +33,12 @@ use hyper::mime::{Mime, TopLevel, SubLevel};
 use std::error::Error;
 use std::fmt::{self, Debug};
 
+mod post;
+use post::*;
+
+
+mod backend;
+use backend::*;
 
 #[derive(Debug)]
 struct StringError(String);
@@ -50,7 +57,7 @@ impl Error for StringError {
 
 #[derive(Default,Clone)]
 struct Spaceship {
-    cache: Arc<RwLock<HashMap<String, String>>>,
+    cache: Arc<RwLock<Cache>>,
     tera: Arc<RwLock<Tera>>,
 }
 
@@ -61,7 +68,7 @@ impl Spaceship {
 	fn tera<'a>(&'a self) -> &'a Arc<RwLock<Tera>> {
 		&self.tera
 	}
-	fn cache<'a>(&'a self) -> &'a Arc<RwLock<HashMap<String, String>>> {
+	fn cache<'a>(&'a self) -> &'a Arc<RwLock<Cache>> {
 		&self.cache
 	}
 
@@ -81,11 +88,20 @@ impl Handler for Spaceship {
 		chunks.retain(|&x| x != "");
 		let path = chunks.join("/");
 
+		let host = req.url.host();
+
+		let hostname = match host {
+            iron::url::Host::Domain(ref host) => String::from(*host),
+            iron::url::Host::Ipv4(addr) => format!("{}", addr),
+            iron::url::Host::Ipv6(addr) => format!("{}", addr),
+		};
+
 		let mut ctx = Context::new();
 		ctx.add("title", &"spaceship!");
-		ctx.add("body", &format!("\"{}\" is still work in progress", path));
+		ctx.add("host", &hostname);
 
-		let template = String::from("index.html");
+
+		let template = String::from("workinprogress.html");
 		match self.render(&template, &mut ctx) {
 			Some(content) => {
 				let mut resp = Response::with((iron::status::Ok, content));

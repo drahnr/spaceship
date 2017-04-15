@@ -105,3 +105,9 @@ table {
   top: 1px;
   transform: rotate(1.4deg);
 }
+
+.hemingwayspecial {
+    font-weight: bold;
+    font-size: 5em;
+    color: white;
+}
